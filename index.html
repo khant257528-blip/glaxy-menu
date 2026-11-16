@@ -1,0 +1,787 @@
+<!DOCTYPE html>
+<html lang="my">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart QR Digital Menu & POS</title>
+    
+    <!-- 1. Firebase SDKs (Real-time Database ချိတ်ရန်) -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
+
+    <!-- 2. QR Code Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+    <style>
+        :root {
+            --bg: #0f0f13;
+            --card: #1a1a24;
+            --purple: #9d4edd;
+            --purple-light: #c77dff;
+            --green: #00e676;
+            --red: #ff5252;
+            --gold: #ffd700;
+            --text: #ffffff;
+            --subtext: #a0a0b0;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: sans-serif; }
+        body { background: var(--bg); color: var(--text); padding: 16px; max-width: 500px; margin: auto; padding-bottom: 110px; }
+
+        header { text-align: center; margin-bottom: 16px; padding-top: 10px; }
+        header h2 { font-size: 24px; color: var(--purple-light); font-weight: bold; }
+        header p { font-size: 13px; color: var(--subtext); margin-top: 4px; }
+
+        .card { background: var(--card); border-radius: 18px; padding: 20px; margin-bottom: 14px; border: 1px solid #2a2a38; box-shadow: 0 8px 20px rgba(0,0,0,0.4); }
+        label { display: block; font-size: 12px; color: var(--subtext); margin-bottom: 6px; margin-top: 12px; font-weight: bold; }
+        input, select { width: 100%; padding: 12px; border-radius: 12px; border: 1px solid #333344; background: #12121a; color: #fff; font-size: 14px; outline: none; transition: 0.2s; }
+        input:focus, select:focus { border-color: var(--purple); box-shadow: 0 0 8px rgba(157,78,221,0.3); }
+
+        .btn { width: 100%; padding: 13px; border: none; border-radius: 12px; font-size: 15px; font-weight: bold; cursor: pointer; margin-top: 14px; transition: 0.2s; }
+        .btn-purple { background: var(--purple); color: #fff; }
+        .btn-purple:hover { background: #b565ff; }
+        .btn-green { background: #00c853; color: #000; }
+        .btn-outline { background: transparent; border: 1px solid var(--purple); color: var(--purple-light); }
+        .btn-red { background: rgba(255, 82, 82, 0.15); color: var(--red); padding: 6px 10px; width: auto; font-size: 12px; margin-top: 0; }
+        .btn-copy { background: #333344; color: #fff; border: none; padding: 6px 10px; border-radius: 6px; font-size: 11px; cursor: pointer; margin-left: 6px; }
+
+        .auth-container { max-width: 400px; margin: 15px auto; text-align: center; }
+        .auth-logo { font-size: 48px; margin-bottom: 8px; }
+        .seller-key-box { background: rgba(255, 215, 0, 0.08); border: 1px dashed var(--gold); padding: 12px; border-radius: 12px; margin-top: 14px; text-align: left; }
+
+        .admin-tabs { display: flex; background: #12121a; border-radius: 12px; padding: 4px; margin-bottom: 14px; border: 1px solid #2a2a38; gap: 4px; }
+        .tab-btn { flex: 1; padding: 10px 4px; border: none; border-radius: 9px; background: transparent; color: var(--subtext); font-weight: bold; font-size: 12px; cursor: pointer; text-align: center; }
+        .tab-btn.active { background: var(--purple); color: #fff; }
+
+        .cat-bar { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 10px; }
+        .cat-pill { background: #1a1a24; border: 1px solid #2a2a38; color: var(--subtext); padding: 8px 16px; border-radius: 20px; font-size: 13px; white-space: nowrap; cursor: pointer; font-weight: bold; }
+        .cat-pill.active { background: var(--purple); color: #fff; border-color: var(--purple); }
+
+        .menu-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #262635; }
+        .menu-item:last-child { border-bottom: none; }
+        .item-info h4 { font-size: 15px; margin-bottom: 4px; }
+        .item-cat { font-size: 10px; background: rgba(157, 78, 221, 0.2); color: var(--purple-light); padding: 2px 8px; border-radius: 6px; display: inline-block; margin-bottom: 4px; font-weight: bold; }
+        .item-price { font-size: 14px; color: var(--green); font-weight: bold; }
+
+        .qty-box { display: flex; align-items: center; gap: 10px; }
+        .qty-btn { width: 32px; height: 32px; border-radius: 8px; border: none; background: #2c2c3a; color: #fff; font-size: 16px; font-weight: bold; cursor: pointer; }
+        .qty-btn.add { background: var(--purple); }
+
+        .cart-bar { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); width: calc(100% - 32px); max-width: 468px; background: var(--purple); color: #fff; padding: 14px 18px; border-radius: 14px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 8px 25px rgba(0,0,0,0.6); cursor: pointer; font-weight: bold; z-index: 10; }
+
+        .qr-preview { background: #fff; padding: 16px; border-radius: 12px; display: inline-block; margin: 14px auto; }
+        .qr-wrapper { text-align: center; }
+
+        .order-ticket { background: #12121a; border-left: 4px solid var(--green); padding: 14px; border-radius: 10px; margin-bottom: 10px; border: 1px solid #262635; }
+        .badge-new { background: var(--green); color: #000; font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
+
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); justify-content: center; align-items: center; padding: 16px; z-index: 99; overflow-y: auto; }
+        .modal-content { background: var(--card); width: 100%; max-width: 420px; border-radius: 18px; padding: 22px; border: 1px solid var(--purple); margin: auto; }
+        .receipt-line { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px dashed #333; font-size: 14px; }
+        .note-input { margin-top: 10px; font-size: 13px; }
+
+        .payment-options { display: flex; gap: 6px; margin-top: 8px; }
+        .pay-pill { flex: 1; background: #12121a; border: 1px solid #333344; padding: 9px 4px; border-radius: 8px; text-align: center; font-size: 11px; cursor: pointer; color: var(--subtext); font-weight: bold; }
+        .pay-pill.active { border-color: var(--purple); background: rgba(157, 78, 221, 0.2); color: #fff; }
+
+        .slip-img-preview { width: 100%; max-height: 120px; object-fit: cover; border-radius: 8px; margin-top: 8px; border: 1px solid #333; display: none; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h2 id="displayShopName"> Shwe Coffee & Tea</h2>
+        <p id="displayShopSub">မီနူးရွေးချယ်ပြီး အော်ဒါမှာယူနိုင်ပါသည်</p>
+    </header>
+
+    <!-- ၁။ ဝယ်သူ/စားသူ မျက်နှာပြင် (Customer View) -->
+    <div id="customerSection">
+        <div class="card" style="padding: 12px 16px;">
+            <label style="margin-top:0;"> သင့်စားပွဲနံပါတ်</label>
+            <select id="tableSelect">
+                <option value="စားပွဲ (၁)">စားပွဲ (၁)</option>
+                <option value="စားပွဲ (၂)">စားပွဲ (၂)</option>
+                <option value="စားပွဲ (၃)">စားပွဲ (၃)</option>
+                <option value="စားပွဲ (၄)">စားပွဲ (၄)</option>
+                <option value="စားပွဲ (၅)">စားပွဲ (၅)</option>
+                <option value="ပါဆယ် (Takeaway)">ပါဆယ် (Takeaway)</option>
+            </select>
+        </div>
+
+        <div class="cat-bar" id="categoryBar">
+            <button class="cat-pill active" onclick="filterCategory('ALL', this)">အားလုံး</button>
+            <button class="cat-pill" onclick="filterCategory('ကော်ဖီ / အအေး', this)"> ကော်ဖီ / အအေး</button>
+            <button class="cat-pill" onclick="filterCategory('အစားအစာ', this)"> အစားအစာ</button>
+            <button class="cat-pill" onclick="filterCategory('မုန့်မျိုးစုံ', this)"> မုန့်မျိုးစုံ</button>
+        </div>
+
+        <div class="card" id="customerMenuList"></div>
+
+        <div class="cart-bar" id="cartBar" onclick="openReceipt()" style="display: none;">
+            <span id="cartCount"> 0 မျိုး ရွေးထားသည်</span>
+            <span id="cartTotal">0 MMK </span>
+        </div>
+    </div>
+
+    <!-- ၂။ ဆိုင်ရှင် အကောင့်ဝင်ရန် / အကောင့်ဖွင့်ရန် မျက်နှာပြင် -->
+    <div id="authSection" style="display: none;" class="auth-container">
+        <div class="card">
+            <div class="auth-logo"></div>
+            <h3 style="color: var(--purple-light); font-size: 20px; margin-bottom: 4px;" id="authTitle">ဆိုင်ရှင် အကောင့်ဝင်ရန်</h3>
+            <p style="font-size: 12px; color: var(--subtext); margin-bottom: 14px;">သင့်ဆိုင်၏ ဒစ်ဂျစ်တယ် မီနူးနှင့် အော်ဒါများကို စီမံပါ</p>
+            
+            <!-- Login Form -->
+            <div id="loginForm" style="text-align: left;">
+                <label>ဆိုင်ရှင် ဖုန်းနံပါတ် (သို့) အီးမေးလ်</label>
+                <input type="text" id="loginUser" placeholder="ဥပမာ - 09123456789">
+                
+                <label>ဆိုင်ရှင် စကားဝှက် (Password)</label>
+                <input type="password" id="loginPass" placeholder="">
+                
+                <button class="btn btn-purple" onclick="handleLogin()"> အကောင့်ဝင်မည်</button>
+                
+                <p style="text-align:center; font-size:12px; color:var(--subtext); margin-top:16px; cursor:pointer;" onclick="toggleAuthMode(true)">
+                    ဆိုင်အကောင့် မရှိသေးဘူးလား? <span style="color:var(--purple-light); font-weight:bold;">အကောင့်အသစ်ဖွင့်မည် </span>
+                </p>
+            </div>
+
+            <!-- Register Form (Seller Activation Password ပါမှ အကောင့်ဖွင့်လို့ရမည်) -->
+            <div id="registerForm" style="display: none; text-align: left;">
+                <label>ဆိုင်အမည်</label>
+                <input type="text" id="regShopName" placeholder="ဥပမာ - Shwe Coffee & Tea">
+                
+                <label>ဆိုင်ရှင် ဖုန်းနံပါတ် (သို့) အီးမေးလ်</label>
+                <input type="text" id="regUser" placeholder="ဥပမာ - 09123456789">
+                
+                <label>ဆိုင်ရှင် စကားဝှက်အသစ် (Password)</label>
+                <input type="password" id="regPass" placeholder="">
+
+                <div class="seller-key-box">
+                    <label style="margin-top:0; color: var(--gold);"> Software ခွင့်ပြုချက် ကုဒ် (Activation Password)</label>
+                    <input type="password" id="sellerKeyInput" placeholder="ရောင်းချသူပေးသော လျှို့ဝှက်ကုဒ် ထည့်ပါ" style="border-color: var(--gold);">
+                    <p style="font-size: 11px; color: var(--subtext); margin-top: 5px;">* ဆိုင်အသစ်ဖွင့်ရန် Software ရောင်းချသူ၏ ခွင့်ပြုချက် Password လိုအပ်ပါသည်။</p>
+                </div>
+                
+                <button class="btn btn-green" onclick="handleRegister()"> အတည်ပြုပြီး အကောင့်ဖွင့်မည်</button>
+                
+                <p style="text-align:center; font-size:12px; color:var(--subtext); margin-top:16px; cursor:pointer;" onclick="toggleAuthMode(false)">
+                    အကောင့်ရှိပြီးသားလား? <span style="color:var(--purple-light); font-weight:bold;">အကောင့်ဝင်မည် </span>
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- ၃။ ဆိုင်ရှင်အခန်း (Owner Dashboard) -->
+    <div id="ownerDashboard" style="display: none;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; background:#1a1a24; padding:12px 16px; border-radius:14px; border:1px solid #2a2a38;">
+            <span style="font-size:14px; font-weight:bold; color:var(--purple-light);"> ဆိုင်ရှင် စီမံခန့်ခွဲမှုအခန်း</span>
+            <button class="btn" style="width:auto; padding:6px 12px; margin:0; font-size:12px; background:#c62828; color:#fff;" onclick="handleLogout()"> အကောင့်ထွက်မည်</button>
+        </div>
+
+        <div class="admin-tabs">
+            <button class="tab-btn active" id="tabOrders" onclick="switchOwnerTab('orders')"> အော်ဒါများ <span id="orderBadge"></span></button>
+            <button class="tab-btn" id="tabQR" onclick="switchOwnerTab('qr')"> QR ထုတ်ရန်</button>
+            <button class="tab-btn" id="tabMenu" onclick="switchOwnerTab('menu')"> ဆိုင်နှင့် ငွေပေးချေမှု</button>
+        </div>
+
+        <!-- အော်ဒါများ တက်ဘ် -->
+        <div id="ownerOrdersTab">
+            <div class="card">
+                <h3 style="color: var(--green); font-size: 15px; margin-bottom: 12px;"> စားပွဲများမှ မှာယူထားသော အော်ဒါများ (Live)</h3>
+                <div id="liveOrdersList"><p style="text-align:center; color:#888; font-size:13px;">အော်ဒါ အချက်အလက်များ ချိတ်ဆက်နေပါသည်...</p></div>
+            </div>
+        </div>
+
+        <!-- QR ထုတ်ရန် တက်ဘ် -->
+        <div id="ownerQrTab" style="display: none;">
+            <div class="card">
+                <h3 style="color: var(--purple-light); font-size: 15px; margin-bottom: 6px;"> စားပွဲတင် QR Code ထုတ်ရန်</h3>
+                <p style="font-size: 12px; color: var(--subtext); line-height: 1.5; margin-bottom: 10px;">
+                    စားပွဲနံပါတ်အလိုက် QR ထုတ်ပြီး စက္ကူဖြင့် Print ထုတ်ကာ စားပွဲပေါ်တွင် ကပ်ထားပါ။
+                </p>
+                <label>၁။ သင့် Digital Menu Link</label>
+                <input type="text" id="baseUrlInput">
+                <label>၂။ စားပွဲနံပါတ် ရွေးပါ</label>
+                <select id="qrTableSelect">
+                    <option value="1">စားပွဲ (၁)</option>
+                    <option value="2">စားပွဲ (၂)</option>
+                    <option value="3">စားပွဲ (၃)</option>
+                    <option value="4">စားပွဲ (၄)</option>
+                    <option value="5">စားပွဲ (၅)</option>
+                </select>
+                <button class="btn btn-purple" onclick="generateTableQR()"> QR Code ထုတ်မည်</button>
+                <div class="qr-wrapper" id="qrResultArea" style="display:none;">
+                    <div class="qr-preview" id="qrcodeContainer"></div>
+                    <p id="qrLabelText" style="font-weight:bold; color:var(--purple-light); margin-bottom:8px;"></p>
+                    <button class="btn btn-outline" onclick="downloadQR()"> QR ပုံကို ဖုန်းထဲသိမ်းမည်</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ဆိုင်နှင့် ငွေပေးချေမှု တက်ဘ် -->
+        <div id="ownerMenuTab" style="display: none;">
+            <div class="card">
+                <label style="margin-top:0;"> ဆိုင်အမည် ပြောင်းရန်</label>
+                <input type="text" id="shopNameInput">
+                
+                <label> KBZ Pay ဖုန်းနံပါတ်နှင့် အမည်</label>
+                <input type="text" id="kbzNumInput" placeholder="09xxxxxxxxx (အမည်)">
+
+                <label> AYA Pay ဖုန်းနံပါတ်နှင့် အမည်</label>
+                <input type="text" id="ayaNumInput" placeholder="09xxxxxxxxx (အမည်)">
+
+                <label> Wave Money ဖုန်းနံပါတ်နှင့် အမည်</label>
+                <input type="text" id="waveNumInput" placeholder="09xxxxxxxxx (အမည်)">
+
+                <button class="btn btn-purple" onclick="updateShopInfo()"> ဆိုင်အချက်အလက် သိမ်းမည်</button>
+            </div>
+
+            <div class="card">
+                <label style="margin-top:0;"> မီနူး အသစ်ထည့်ရန်</label>
+                <label>အမျိုးအစား</label>
+                <select id="itemCategoryInput">
+                    <option value="ကော်ဖီ / အအေး"> ကော်ဖီ / အအေး</option>
+                    <option value="အစားအစာ"> အစားအစာ</option>
+                    <option value="မုန့်မျိုးစုံ"> မုန့်မျိုးစုံ</option>
+                </select>
+                <label>အမည်</label>
+                <input type="text" id="itemNameInput" placeholder="ဥပမာ - Iced Latte">
+                <label>ဈေးနှုန်း (MMK)</label>
+                <input type="number" id="itemPriceInput" placeholder="3500">
+                <button class="btn btn-purple" onclick="addMenuItem()"> မီနူးထဲ ထည့်မည်</button>
+            </div>
+
+            <div class="card">
+                <label style="margin-top:0;"> လက်ရှိ မီနူးစာရင်း</label>
+                <div id="adminMenuList"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- အော်ဒါအတည်ပြုရန် Modal -->
+    <div class="modal" id="receiptModal">
+        <div class="modal-content">
+            <h3 style="color: var(--purple-light); text-align: center; margin-bottom: 6px;"> အော်ဒါ စာရင်းနှင့် ငွေပေးချေမှု</h3>
+            <p id="receiptTable" style="text-align: center; font-size: 13px; color: #ccc; margin-bottom: 12px;"></p>
+            <div id="receiptItems"></div>
+            
+            <label style="margin-top:12px;"> ငွေပေးချေမည့် နည်းလမ်း ရွေးပါ</label>
+            <div class="payment-options">
+                <div class="pay-pill active" id="payCash" onclick="selectPayment('Cash')"> ငွေသား</div>
+                <div class="pay-pill" id="payKbz" onclick="selectPayment('KBZPay')">KBZ Pay</div>
+                <div class="pay-pill" id="payAya" onclick="selectPayment('AYAPay')">AYA Pay</div>
+                <div class="pay-pill" id="payWave" onclick="selectPayment('WaveMoney')">Wave</div>
+            </div>
+
+            <div id="ePayDetailsBox" style="display:none; background:#12121a; padding:12px; border-radius:8px; margin-top:10px; font-size:12px; border:1px dashed var(--purple);">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                    <span style="color:var(--subtext);">ငွေလွှဲရန် နံပါတ်:</span>
+                    <div>
+                        <span id="payPhoneDisplay" style="color:var(--green); font-weight:bold; font-size:13px;">-</span>
+                        <button class="btn-copy" onclick="copyPayPhone()"> Copy</button>
+                    </div>
+                </div>
+                
+                <label style="margin-top:8px;"> ငွေလွှဲစလစ် (Screenshot) တင်ရန်</label>
+                <input type="file" id="slipFileInput" accept="image/*" onchange="previewSlip(event)" style="font-size:11px; padding:6px;">
+                <img id="slipPreviewImg" class="slip-img-preview" alt="Slip Preview">
+            </div>
+
+            <input type="text" id="orderNoteInput" class="note-input" placeholder=" မှာကြားလိုသည်များ (ဥပမာ - အချိုလျှော့)">
+
+            <div style="display: flex; justify-content: space-between; margin-top: 14px; font-size: 16px; font-weight: bold; color: var(--green);">
+                <span>စုစုပေါင်း ကျသင့်ငွေ</span>
+                <span id="receiptTotalText">0 MMK</span>
+            </div>
+            <button class="btn btn-green" onclick="confirmOrder()"> အော်ဒါ တင်မည်</button>
+            <button class="btn" style="background: #2c2c3a; color: #fff;" onclick="closeReceipt()">ပြန်ပိတ်မည်</button>
+        </div>
+    </div>
+
+    <!-- ဆိုင်ရှင်အခန်းမှ စလစ်ပုံ ကြီးပြရန် Modal -->
+    <div class="modal" id="slipModal" onclick="closeSlipModal()">
+        <div class="modal-content" style="text-align:center;">
+            <h3 style="color:var(--purple-light); margin-bottom:10px;"> ငွေလွှဲစလစ် (Slip)</h3>
+            <img id="fullSlipImg" style="width:100%; max-height:400px; object-fit:contain; border-radius:8px;" alt="Full Slip">
+            <p style="font-size:11px; color:#888; margin-top:10px;">ပိတ်ရန် ဤနေရာကို နှိပ်ပါ</p>
+        </div>
+    </div>
+
+    <script>
+        // ============================================================
+        // 1. Firebase Configuration (မင်းရဲ့ Project Config အစစ်)
+        // ============================================================
+        const firebaseConfig = {
+            apiKey: "AIzaSyDUS-YbRDvvu1V9zJRaxewK4b8KD7GmcDc",
+            authDomain: "smartmenupos.firebaseapp.com",
+            databaseURL: "https://smartmenupos-default-rtdb.firebaseio.com",
+            projectId: "smartmenupos",
+            storageBucket: "smartmenupos.firebasestorage.app",
+            messagingSenderId: "472976208167",
+            appId: "1:472976208167:web:180fd86ef95b76c9d8f902",
+            measurementId: "G-NL6GCLZ1YY"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
+        // ============================================================
+        // 2. Seller Activation Code (မင်းသတ်မှတ်ထားသော လျှို့ဝှက်ကုဒ်)
+        // ============================================================
+        const SELLER_ACTIVATION_CODE = "SHWE2026";
+
+        let menuItems = JSON.parse(localStorage.getItem("digiMenuV12")) || [
+            { id: 1, category: "ကော်ဖီ / အအေး", name: "Iced Americano", price: 3000 },
+            { id: 2, category: "ကော်ဖီ / အအေး", name: "Iced Caramel Latte", price: 4200 },
+            { id: 3, category: "အစားအစာ", name: "ကြက်သား ခေါက်ဆွဲကြော်", price: 4500 },
+            { id: 4, category: "မုန့်မျိုးစုံ", name: "Chocolate Croissant", price: 3500 }
+        ];
+
+        let activeOrders = [];
+        let ownerAccount = JSON.parse(localStorage.getItem("digiOwnerAccV12")) || null;
+        let shopName = localStorage.getItem("digiShopNameV12") || " Shwe Coffee & Tea";
+        
+        let payNumbers = JSON.parse(localStorage.getItem("digiPayNumsV12")) || {
+            kbz: "09912345678 (Ko Aung)",
+            aya: "09987654321 (Ko Aung)",
+            wave: "09400000000 (Ko Aung)"
+        };
+
+        let isLoggedIn = localStorage.getItem("digiIsLoggedInV12") === "true";
+
+        let cart = {};
+        let currentFilter = "ALL";
+        let selectedPaymentMethod = "Cash";
+        let currentSlipBase64 = "";
+
+        function initApp() {
+            document.getElementById("displayShopName").innerText = shopName;
+            document.getElementById("shopNameInput").value = shopName;
+            document.getElementById("kbzNumInput").value = payNumbers.kbz;
+            document.getElementById("ayaNumInput").value = payNumbers.aya;
+            document.getElementById("waveNumInput").value = payNumbers.wave;
+
+            const cleanUrl = window.location.href.split('?')[0];
+            document.getElementById("baseUrlInput").value = cleanUrl;
+
+            const urlParams = new URLSearchParams(window.location.search);
+            const tableParam = urlParams.get('table');
+
+            // Firebase Realtime Database မှ အော်ဒါများကို အမြဲစောင့်ကြည့်ဖတ်ယူမည်
+            db.ref('orders').on('value', (snapshot) => {
+                const data = snapshot.val();
+                activeOrders = [];
+                if (data) {
+                    Object.keys(data).forEach(key => {
+                        activeOrders.unshift(data[key]);
+                    });
+                }
+                renderKitchenOrders();
+            });
+
+            // QR ဖြင့် စကင်ဖတ်ဝင်လာပါက (?table= ပါလျှင်) ဖောက်သည် မီနူးကို ပြမည်
+            if (tableParam) {
+                document.getElementById("customerSection").style.display = "block";
+                document.getElementById("authSection").style.display = "none";
+                document.getElementById("ownerDashboard").style.display = "none";
+                
+                const tableSelect = document.getElementById("tableSelect");
+                const targetVal = `စားပွဲ (${tableParam})`;
+                if (Array.from(tableSelect.options).some(o => o.value === targetVal)) {
+                    tableSelect.value = targetVal;
+                }
+            } else {
+                // QR မပါဘဲ App ကို ဖွင့်ပါက ဆိုင်ရှင် Login မျက်နှာပြင် သို့မဟုတ် Dashboard တန်းပေါ်မည်
+                if (isLoggedIn) {
+                    document.getElementById("customerSection").style.display = "none";
+                    document.getElementById("ownerDashboard").style.display = "block";
+                    renderKitchenOrders();
+                } else {
+                    document.getElementById("customerSection").style.display = "none";
+                    document.getElementById("authSection").style.display = "block";
+                    toggleAuthMode(ownerAccount === null);
+                }
+            }
+
+            renderMenus();
+        }
+
+        function selectPayment(method) {
+            selectedPaymentMethod = method;
+            ["payCash", "payKbz", "payAya", "payWave"].forEach(id => document.getElementById(id).classList.remove("active"));
+
+            if (method === 'Cash') {
+                document.getElementById("payCash").classList.add("active");
+                document.getElementById("ePayDetailsBox").style.display = "none";
+            } else {
+                document.getElementById("ePayDetailsBox").style.display = "block";
+                if (method === 'KBZPay') {
+                    document.getElementById("payKbz").classList.add("active");
+                    document.getElementById("payPhoneDisplay").innerText = payNumbers.kbz;
+                } else if (method === 'AYAPay') {
+                    document.getElementById("payAya").classList.add("active");
+                    document.getElementById("payPhoneDisplay").innerText = payNumbers.aya;
+                } else if (method === 'WaveMoney') {
+                    document.getElementById("payWave").classList.add("active");
+                    document.getElementById("payPhoneDisplay").innerText = payNumbers.wave;
+                }
+            }
+        }
+
+        function copyPayPhone() {
+            const phoneText = document.getElementById("payPhoneDisplay").innerText;
+            navigator.clipboard.writeText(phoneText).then(() => {
+                alert(" ဖုန်းနံပါတ် Copy ကူးယူပြီးပါပြီ!");
+            });
+        }
+
+        function previewSlip(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    currentSlipBase64 = e.target.result;
+                    const preview = document.getElementById("slipPreviewImg");
+                    preview.src = currentSlipBase64;
+                    preview.style.display = "block";
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+
+        function toggleAuthMode(isReg) {
+            document.getElementById("loginForm").style.display = isReg ? "none" : "block";
+            document.getElementById("registerForm").style.display = isReg ? "block" : "none";
+            document.getElementById("authTitle").innerText = isReg ? " ဆိုင်ရှင် အကောင့်အသစ်ဖွင့်ရန်" : " ဆိုင်ရှင် အကောင့်ဝင်ရန်";
+        }
+
+        function handleRegister() {
+            const sName = document.getElementById("regShopName").value.trim();
+            const u = document.getElementById("regUser").value.trim();
+            const p = document.getElementById("regPass").value.trim();
+            const sellerKey = document.getElementById("sellerKeyInput").value.trim();
+
+            if (!sName || !u || !p || !sellerKey) {
+                alert("ကျေးဇူးပြု၍ အချက်အလက် အားလုံးနှင့် ခွင့်ပြုချက်ကုဒ် (Activation Password) ကို ဖြည့်ပါ။");
+                return;
+            }
+
+            if (sellerKey !== SELLER_ACTIVATION_CODE) {
+                alert(" Software ခွင့်ပြုချက် ကုဒ် (Activation Password) မှားယွင်းနေပါသည်။ ရောင်းချသူထံ ဆက်သွယ်ပါ။");
+                return;
+            }
+
+            ownerAccount = { shop: sName, user: u, pass: p };
+            localStorage.setItem("digiOwnerAccV12", JSON.stringify(ownerAccount));
+            shopName = sName;
+            localStorage.setItem("digiShopNameV12", shopName);
+            document.getElementById("displayShopName").innerText = shopName;
+            document.getElementById("shopNameInput").value = shopName;
+
+            isLoggedIn = true;
+            localStorage.setItem("digiIsLoggedInV12", "true");
+
+            alert(" ဆိုင်အကောင့် အောင်မြင်စွာ ဖွင့်လှစ်ပြီးပါပြီ!");
+            document.getElementById("authSection").style.display = "none";
+            document.getElementById("ownerDashboard").style.display = "block";
+        }
+
+        function handleLogin() {
+            if (!ownerAccount) {
+                alert("အကောင့် မရှိသေးပါ။ အရင်ဆုံး 'အကောင့်အသစ်ဖွင့်မည်' ကို နှိပ်ပါ။");
+                toggleAuthMode(true);
+                return;
+            }
+            const u = document.getElementById("loginUser").value.trim();
+            const p = document.getElementById("loginPass").value.trim();
+
+            if (u === ownerAccount.user && p === ownerAccount.pass) {
+                isLoggedIn = true;
+                localStorage.setItem("digiIsLoggedInV12", "true");
+                document.getElementById("authSection").style.display = "none";
+                document.getElementById("ownerDashboard").style.display = "block";
+                renderKitchenOrders();
+            } else {
+                alert(" ဖုန်းနံပါတ် သို့မဟုတ် Password မှားယွင်းနေပါသည်။");
+            }
+        }
+
+        function handleLogout() {
+            isLoggedIn = false;
+            localStorage.setItem("digiIsLoggedInV12", "false");
+            document.getElementById("ownerDashboard").style.display = "none";
+            document.getElementById("authSection").style.display = "block";
+            toggleAuthMode(false);
+        }
+
+        function switchOwnerTab(tab) {
+            document.getElementById("ownerOrdersTab").style.display = tab === 'orders' ? 'block' : 'none';
+            document.getElementById("ownerQrTab").style.display = tab === 'qr' ? 'block' : 'none';
+            document.getElementById("ownerMenuTab").style.display = tab === 'menu' ? 'block' : 'none';
+
+            ["tabOrders", "tabQR", "tabMenu"].forEach(id => document.getElementById(id).classList.remove("active"));
+            if (tab === 'orders') { document.getElementById("tabOrders").classList.add("active"); renderKitchenOrders(); }
+            if (tab === 'qr') document.getElementById("tabQR").classList.add("active");
+            if (tab === 'menu') document.getElementById("tabMenu").classList.add("active");
+        }
+
+        function filterCategory(cat, btn) {
+            currentFilter = cat;
+            document.querySelectorAll(".cat-pill").forEach(p => p.classList.remove("active"));
+            btn.classList.add("active");
+            renderMenus();
+        }
+
+        function updateShopInfo() {
+            shopName = document.getElementById("shopNameInput").value.trim() || shopName;
+            payNumbers.kbz = document.getElementById("kbzNumInput").value.trim() || payNumbers.kbz;
+            payNumbers.aya = document.getElementById("ayaNumInput").value.trim() || payNumbers.aya;
+            payNumbers.wave = document.getElementById("waveNumInput").value.trim() || payNumbers.wave;
+            
+            if (ownerAccount) {
+                ownerAccount.shop = shopName;
+                localStorage.setItem("digiOwnerAccV12", JSON.stringify(ownerAccount));
+            }
+            localStorage.setItem("digiShopNameV12", shopName);
+            localStorage.setItem("digiPayNumsV12", JSON.stringify(payNumbers));
+            document.getElementById("displayShopName").innerText = shopName;
+            alert("ဆိုင်အချက်အလက်များနှင့် ငွေပေးချေမှု နံပါတ်များ သိမ်းဆည်းပြီးပါပြီ!");
+        }
+
+        function addMenuItem() {
+            const category = document.getElementById("itemCategoryInput").value;
+            const name = document.getElementById("itemNameInput").value.trim();
+            const price = parseInt(document.getElementById("itemPriceInput").value);
+            if (!name || isNaN(price) || price <= 0) return alert("အမည်နှင့် ဈေးနှုန်း မှန်ကန်စွာ ဖြည့်ပါ။");
+
+            menuItems.push({ id: Date.now(), category, name, price });
+            localStorage.setItem("digiMenuV12", JSON.stringify(menuItems));
+            document.getElementById("itemNameInput").value = "";
+            document.getElementById("itemPriceInput").value = "";
+            renderMenus();
+            alert("မီနူးအသစ် ထည့်သွင်းပြီးပါပြီ!");
+        }
+
+        function deleteMenuItem(id) {
+            menuItems = menuItems.filter(m => m.id !== id);
+            delete cart[id];
+            localStorage.setItem("digiMenuV12", JSON.stringify(menuItems));
+            renderMenus();
+            updateCartBar();
+        }
+
+        function renderMenus() {
+            const custDiv = document.getElementById("customerMenuList");
+            const adminDiv = document.getElementById("adminMenuList");
+            custDiv.innerHTML = "";
+            adminDiv.innerHTML = "";
+
+            const filtered = currentFilter === "ALL" ? menuItems : menuItems.filter(m => m.category === currentFilter);
+
+            if (filtered.length === 0) {
+                custDiv.innerHTML = "<p style='text-align:center; color:#888; font-size:13px;'>ဤအမျိုးအစားတွင် မီနူး မရှိသေးပါ။</p>";
+            }
+
+            filtered.forEach(item => {
+                const qty = cart[item.id] || 0;
+                custDiv.innerHTML += `
+                    <div class="menu-item">
+                        <div class="item-info">
+                            <span class="item-cat">${item.category}</span>
+                            <h4>${item.name}</h4>
+                            <div class="item-price">${item.price.toLocaleString()} MMK</div>
+                        </div>
+                        <div class="qty-box">
+                            ${qty > 0 ? `<button class="qty-btn" onclick="changeQty(${item.id}, -1)">-</button><span>${qty}</span>` : ''}
+                            <button class="qty-btn add" onclick="changeQty(${item.id}, 1)">+</button>
+                        </div>
+                    </div>
+                `;
+            });
+
+            menuItems.forEach(item => {
+                adminDiv.innerHTML += `
+                    <div class="menu-item">
+                        <div class="item-info">
+                            <h4>${item.name}</h4>
+                            <div class="item-price">${item.price.toLocaleString()} MMK (${item.category})</div>
+                        </div>
+                        <button class="btn btn-red" onclick="deleteMenuItem(${item.id})">ဖျက်မည်</button>
+                    </div>
+                `;
+            });
+        }
+
+        function changeQty(id, delta) {
+            cart[id] = (cart[id] || 0) + delta;
+            if (cart[id] <= 0) delete cart[id];
+            renderMenus();
+            updateCartBar();
+        }
+
+        function updateCartBar() {
+            let count = 0, total = 0;
+            Object.keys(cart).forEach(id => {
+                const item = menuItems.find(m => m.id == id);
+                if (item) { count += cart[id]; total += item.price * cart[id]; }
+            });
+
+            const bar = document.getElementById("cartBar");
+            if (count > 0) {
+                bar.style.display = "flex";
+                document.getElementById("cartCount").innerText = ` ${count} ခု ရွေးထားသည်`;
+                document.getElementById("cartTotal").innerText = `${total.toLocaleString()} MMK `;
+            } else { bar.style.display = "none"; }
+        }
+
+        function openReceipt() {
+            const table = document.getElementById("tableSelect").value;
+            document.getElementById("receiptTable").innerText = ` ${table}`;
+            const itemsDiv = document.getElementById("receiptItems");
+            itemsDiv.innerHTML = "";
+            let total = 0;
+
+            Object.keys(cart).forEach(id => {
+                const item = menuItems.find(m => m.id == id);
+                if (item) {
+                    const sub = item.price * cart[id];
+                    total += sub;
+                    itemsDiv.innerHTML += `<div class="receipt-line"><span>${item.name} x ${cart[id]}</span><span>${sub.toLocaleString()} MMK</span></div>`;
+                }
+            });
+
+            document.getElementById("receiptTotalText").innerText = `${total.toLocaleString()} MMK`;
+            document.getElementById("receiptModal").style.display = "flex";
+        }
+
+        function closeReceipt() { document.getElementById("receiptModal").style.display = "none"; }
+
+        // ဖောက်သည် အော်ဒါတင်လိုက်သည်နှင့် Firebase ထဲသို့ တိုက်ရိုက် ပို့မည်
+        function confirmOrder() {
+            const table = document.getElementById("tableSelect").value;
+            const note = document.getElementById("orderNoteInput").value.trim();
+            let items = [];
+            let total = 0;
+
+            Object.keys(cart).forEach(id => {
+                const item = menuItems.find(m => m.id == id);
+                if (item) {
+                    items.push(`${item.name} (${cart[id]} ခု)`);
+                    total += item.price * cart[id];
+                }
+            });
+
+            const newOrder = {
+                id: Date.now(),
+                table,
+                items,
+                note,
+                payment: selectedPaymentMethod,
+                slip: currentSlipBase64,
+                total,
+                time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            };
+
+            // Firebase Realtime Database ထဲသို့ သိမ်းဆည်းခြင်း
+            db.ref('orders/' + newOrder.id).set(newOrder)
+                .then(() => {
+                    alert(" အော်ဒါ အောင်မြင်စွာ မှာယူပြီးပါပြီ!");
+                    cart = {};
+                    currentSlipBase64 = "";
+                    document.getElementById("orderNoteInput").value = "";
+                    document.getElementById("slipFileInput").value = "";
+                    document.getElementById("slipPreviewImg").style.display = "none";
+                    closeReceipt();
+                    renderMenus();
+                    updateCartBar();
+                })
+                .catch((error) => {
+                    alert("အော်ဒါတင်ရာတွင် အမှားအယွင်းရှိပါသည်: " + error.message);
+                });
+        }
+
+        function renderKitchenOrders() {
+            const list = document.getElementById("liveOrdersList");
+            const badge = document.getElementById("orderBadge");
+            if(badge) badge.innerText = activeOrders.length > 0 ? `(${activeOrders.length})` : "";
+            list.innerHTML = "";
+
+            if (activeOrders.length === 0) {
+                list.innerHTML = `<p style="text-align: center; color: #888; font-size: 13px;">အော်ဒါ အသစ် မရှိသေးပါ။</p>`;
+                return;
+            }
+
+            activeOrders.forEach(ord => {
+                let payBadgeColor = ord.payment === 'Cash' ? '#ffb74d' : 'var(--green)';
+                let slipHtml = ord.slip ? `<div style="margin-top:6px;"><img src="${ord.slip}" style="width:70px; height:70px; object-fit:cover; border-radius:6px; cursor:pointer; border:1px solid #444;" onclick="showFullSlip('${ord.slip}')" title="စလစ်ပုံနှိပ်၍ ကြည့်ရန်"></div>` : '';
+
+                list.innerHTML += `
+                    <div class="order-ticket">
+                        <div style="display:flex; justify-content:space-between; font-weight:bold; color:var(--purple-light); margin-bottom:6px;">
+                            <span> ${ord.table} <span class="badge-new">NEW</span></span>
+                            <span style="font-size:11px; color:#aaa;"> ${ord.time}</span>
+                        </div>
+                        <div style="font-size:13px; color:#fff; margin-bottom:6px; line-height:1.5;">${ord.items.join('<br>')}</div>
+                        <div style="font-size:12px; color:${payBadgeColor}; margin-bottom:4px; font-weight:bold;"> ပေးချေမှု: ${ord.payment}</div>
+                        ${slipHtml}
+                        ${ord.note ? `<div style="font-size:12px; color:#ffb74d; margin-top:6px; margin-bottom:8px;"> မှတ်ချက်: ${ord.note}</div>` : ''}
+                        <div style="display:flex; justify-content:space-between; align-items:center; border-top:1px solid #262635; padding-top:8px; margin-top:8px;">
+                            <span style="color:var(--green); font-weight:bold;">${ord.total.toLocaleString()} MMK</span>
+                            <button class="btn btn-red" style="padding:5px 10px;" onclick="completeOrder(${ord.id})">ပို့ပြီးပြီ </button>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
+        function showFullSlip(imgSrc) {
+            document.getElementById("fullSlipImg").src = imgSrc;
+            document.getElementById("slipModal").style.display = "flex";
+        }
+
+        function closeSlipModal() {
+            document.getElementById("slipModal").style.display = "none";
+        }
+
+        // အော်ဒါပို့ပြီးကြောင်း နှိပ်လိုက်လျှင် Firebase ထဲမှပါ ဖျက်ပစ်မည်
+        function completeOrder(id) {
+            db.ref('orders/' + id).remove();
+        }
+
+        function generateTableQR() {
+            const baseUrl = document.getElementById("baseUrlInput").value.trim();
+            const tableNum = document.getElementById("qrTableSelect").value;
+            if (!baseUrl) return alert("Link ထည့်ပေးပါ။");
+
+            const fullLink = `${baseUrl}?table=${tableNum}`;
+            const container = document.getElementById("qrcodeContainer");
+            container.innerHTML = "";
+
+            new QRCode(container, {
+                text: fullLink,
+                width: 180,
+                height: 180,
+                colorDark : "#000000",
+                colorLight : "#ffffff",
+                correctLevel : QRCode.CorrectLevel.H
+            });
+
+            document.getElementById("qrLabelText").innerText = `${shopName} - စားပွဲ (${tableNum})`;
+            document.getElementById("qrResultArea").style.display = "block";
+        }
+
+        function downloadQR() {
+            const img = document.querySelector("#qrcodeContainer img");
+            if (img) {
+                const link = document.createElement("a");
+                link.href = img.src;
+                link.download = `Table-${document.getElementById("qrTableSelect").value}-QR.png`;
+                link.click();
+            } else {
+                alert("QR ပုံကို ဖိနှိပ်ပြီး Save Image လုပ်နိုင်ပါသည်။");
+            }
+        }
+
+        window.onload = initApp;
+    </script>
+</body>
+</html>
